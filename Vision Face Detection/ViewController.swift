@@ -103,7 +103,7 @@ extension ViewController: AVCaptureVideoDataOutputSampleBufferDelegate {
         let ciImage = CIImage(cvImageBuffer: pixelBuffer!, options: attachments as! [String : Any]?)
         
         //leftMirrored for front camera
-        let ciImageWithOrientation = ciImage.applyingOrientation(Int32(UIImageOrientation.leftMirrored.rawValue))
+        let ciImageWithOrientation = ciImage.oriented(forExifOrientation: Int32(UIImageOrientation.leftMirrored.rawValue))
         
         detectFace(on: ciImageWithOrientation)
     }
@@ -168,26 +168,35 @@ extension ViewController {
     }
     
     func convertPointsForFace(_ landmark: VNFaceLandmarkRegion2D?, _ boundingBox: CGRect) {
-        if let points = landmark?.points, let count = landmark?.pointCount {
-            let convertedPoints = convert(points, with: count)
-            
-            let faceLandmarkPoints = convertedPoints.map { (point: (x: CGFloat, y: CGFloat)) -> (x: CGFloat, y: CGFloat) in
-                let pointX = point.x * boundingBox.width + boundingBox.origin.x
-                let pointY = point.y * boundingBox.height + boundingBox.origin.y
-                
-                return (x: pointX, y: pointY)
-            }
-            
-            DispatchQueue.main.async {
-                self.draw(points: faceLandmarkPoints)
-            }
+        guard landmark?.pointCount ?? 0 > 0 else {
+            return
+        }
+        
+        let convertedPoints = convert(landmark?.normalizedPoints ?? [], in: boundingBox)
+        
+        DispatchQueue.main.async {
+//            self.drawBoundingBox(boundingBox)
+            self.draw(points: convertedPoints)
         }
     }
     
-    func draw(points: [(x: CGFloat, y: CGFloat)]) {
+    func drawBoundingBox(_ boundingBox: CGRect) {
         let newLayer = CAShapeLayer()
         newLayer.strokeColor = UIColor.red.cgColor
+        newLayer.fillColor = UIColor.clear.cgColor
         newLayer.lineWidth = 2.0
+        
+        UIColor.clear.setFill()
+        let path = UIBezierPath(rect: boundingBox)
+        newLayer.path = path.cgPath
+        
+        shapeLayer.addSublayer(newLayer)
+    }
+    
+    func draw(points: [CGPoint]) {
+        let newLayer = CAShapeLayer()
+        newLayer.strokeColor = UIColor.red.cgColor
+        newLayer.lineWidth = 1.0
         
         let path = UIBezierPath()
         path.move(to: CGPoint(x: points[0].x, y: points[0].y))
@@ -203,10 +212,11 @@ extension ViewController {
     }
     
     
-    func convert(_ points: UnsafePointer<vector_float2>, with count: Int) -> [(x: CGFloat, y: CGFloat)] {
-        var convertedPoints = [(x: CGFloat, y: CGFloat)]()
-        for i in 0...count {
-            convertedPoints.append((CGFloat(points[i].x), CGFloat(points[i].y)))
+    func convert(_ points: [CGPoint], in boundingBox: CGRect) -> [CGPoint] {
+        var convertedPoints: [CGPoint] = []
+        for point in points {
+            let newPoint = CGPoint(x: boundingBox.origin.x + boundingBox.size.width * point.x, y: boundingBox.origin.y + boundingBox.size.height * point.y)
+            convertedPoints.append(newPoint)
         }
         
         return convertedPoints
